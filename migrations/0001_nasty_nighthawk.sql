@@ -1,0 +1,1 @@
+ALTER TABLE `payment_routes` ADD `external_id` text;
