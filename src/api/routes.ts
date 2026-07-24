@@ -8,11 +8,14 @@ import { listGatewayNames } from "../gateways";
 import { validateWebhookUrl } from "../lib/webhook-url";
 import type { AppEnv } from "../types";
 
+/** How long a route stays usable when the caller does not pick an expiry themselves. */
+const DEFAULT_ROUTE_TTL_MS = 12 * 60 * 60 * 1000;
+
 const createRouteSchema = z.object({
     webhookUrl: z.string().min(1),
     /** Caller's own id for this payment, echoed back as a header on the forwarded callback. */
     externalId: z.string().min(1).max(256).optional(),
-    /** ISO 8601 timestamp after which callbacks carrying this id are rejected. */
+    /** ISO 8601 timestamp after which callbacks carrying this id are rejected. Defaults to 12h out. */
     expiresAt: z.iso.datetime({ offset: true }).optional(),
 });
 
@@ -44,7 +47,7 @@ routesApi.post("/", zValidator("json", createRouteSchema), async (c) => {
             id: crypto.randomUUID(),
             webhookUrl: validation.url.toString(),
             externalId: input.externalId ?? null,
-            expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+            expiresAt: input.expiresAt ? new Date(input.expiresAt) : new Date(Date.now() + DEFAULT_ROUTE_TTL_MS),
         })
         .returning();
 

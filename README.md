@@ -45,8 +45,9 @@ curl -X POST https://router.example.com/v1/routes \
 }
 ```
 
-`expiresAt` is optional. Send `id` to the gateway as its external payment id (for PayU: `extOrderId`
-on the order) and set the matching `callbackUrls` entry as the gateway's webhook URL.
+`expiresAt` is optional and defaults to 12 hours from creation; callbacks arriving after it are
+rejected. Send `id` to the gateway as its external payment id (for PayU: `extOrderId` on the order)
+and set the matching `callbackUrls` entry as the gateway's webhook URL.
 
 ## Gateway callbacks
 
