@@ -1,6 +1,6 @@
 # payment-router
 
-Some payment gateways for some reason only let you configure a single webhook URL. If you have multiple apps that need to receive payments then it is a headache to handle those cases. This project tries to solve this by acting as a router: you register your real webhook URL with this API, and then point the gateway at the worker's URL. The worker will forward the callback to your real webhook URL.
+Some payment gateways for some reason only let you configure a single webhook URL. If you have multiple apps that need to receive payments then it is a nightmare to handle those cases. This project tries to solve this by acting as a router: you register your real webhook URL with this API, and then point the gateway at the worker's URL. The worker will forward the callback to your real webhook URL.
 
 A hosted instance is live at https://payment-r.fanth.pl. You can also [self-host this on Cloudflare Workers](#self-hosting).
 
