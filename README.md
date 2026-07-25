@@ -1,15 +1,8 @@
 # payment-router
 
-A URL shortener, but for payment gateway webhooks.
+Some payment gateways for some reason only let you configure a single webhook URL. If you have multiple apps that need to receive payments then it is a headache to handle those cases. This project tries to solve this by acting as a router: you register your real webhook URL with this API, and then point the gateway at the worker's URL. The worker will forward the callback to your real webhook URL.
 
-Some gateways let you configure only **one** webhook URL - yet all of them let you attach your own
-external payment id to a payment. This worker exploits that: you register your real webhook URL here
-and get back a UUID. You hand that UUID to the gateway as the external payment id, and point the
-gateway's webhook URL at `https://<worker>/webhooks/<gateway>`. When the callback arrives, it gets
-replayed at your real webhook URL - body byte for byte, original headers intact, so the gateway's own
-signature verification still works.
-
-A hosted instance is live at https://payment-r.fanth.pl - no setup needed, just start calling it.
+A hosted instance is live at https://payment-r.fanth.pl. You can also [self-host this on Cloudflare Workers](#self-hosting).
 
 ## Supported gateways
 
