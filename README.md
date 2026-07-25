@@ -25,9 +25,7 @@ directory for the pattern.
 
 ## 1. Set notification url in your payment gateway dashboard
 
-Set it according to this table:
-
-Replace `router.example.com` with your own instance's public origin. The path is fixed per gateway.
+Set the notification URL according to the [table above](#supported-gateways). Replace `router.example.com` with your own instance's public origin. The path is fixed per gateway.
 
 ## 2. Register your webhook on payment initalization
 
