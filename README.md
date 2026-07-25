@@ -3,28 +3,17 @@
 A URL shortener, but for payment gateway webhooks.
 
 Some gateways let you configure only **one** webhook URL - yet all of them let you attach your own
-external payment id to a payment. This worker exploits that: you register the real webhook URL here
-and get back a UUID. You hand that UUID to the gateway as the external payment id, and you point the
-gateway's single webhook URL at `https://<worker>/webhooks/<gateway>`. When the callback arrives, the
-gateway's adapter reads the UUID out of the payload, the worker looks up the matching route and
-replays the request at the real webhook URL - body byte for byte, original headers intact, so
-signature verification still works upstream.
+external payment id to a payment. This worker exploits that: you register your real webhook URL here
+and get back a UUID. You hand that UUID to the gateway as the external payment id, and point the
+gateway's webhook URL at `https://<worker>/webhooks/<gateway>`. When the callback arrives, it gets
+replayed at your real webhook URL - body byte for byte, original headers intact, so the gateway's own
+signature verification still works.
 
-## Setup
+A hosted instance is live at `https://payment-r.fanth.pl` - no setup needed, just start calling it.
 
-```bash
-npx wrangler d1 create payment-router   # paste the printed id into wrangler.jsonc
-pnpm db:generate                        # regenerate SQL after schema changes
-pnpm db:migrate:local                   # apply migrations to the local D1
-pnpm db:migrate                         # apply migrations to the remote D1
-pnpm dev
-```
+## 1. Register your webhook
 
-Set `PUBLIC_BASE_URL` in `wrangler.jsonc` to the worker's public origin.
-
-## Creating a route
-
-The only endpoint. No auth.
+No auth on this endpoint.
 
 ```bash
 curl -X POST https://router.example.com/v1/routes \
@@ -45,54 +34,18 @@ curl -X POST https://router.example.com/v1/routes \
 }
 ```
 
-`expiresAt` is optional and defaults to 12 hours from creation; callbacks arriving after it are
-rejected. Send `id` to the gateway as its external payment id (for PayU: `extOrderId` on the order)
-and set the matching `callbackUrls` entry as the gateway's webhook URL.
+`webhookUrl` must be `https` and a public host. `expiresAt` is optional, defaults to 12h out;
+callbacks arriving after it are rejected. `id` is what you send the gateway as its external payment
+id (for PayU: `extOrderId` on the order).
 
-## Gateway callbacks
+## 2. Point the gateway at it
 
-`ALL /webhooks/:gateway` - the callback endpoint. `:gateway` selects the adapter; an unknown one is a
-404, there is no guessing fallback.
+Set the gateway's webhook URL to the matching entry in `callbackUrls` from the response above.
 
-Supported gateways live in `src/gateways/`, one file each:
+## 3. Verify the callback (recommended)
 
-| Gateway | Adapter          | Where the route id comes from                            |
-| ------- | ---------------- | -------------------------------------------------------- |
-| PayU    | `gateways/payu.ts` | `order.extOrderId` (order notifications), `extOrderId` (refunds) |
-
-Adding a gateway: write `src/gateways/<name>.ts` exporting a `GatewayAdapter` and add it to the
-`adapters` array in `src/gateways/index.ts`. Nothing else changes.
-
-The forwarded request carries extra headers for the receiver:
-
-- `X-Payment-Router-Id` - the route id that matched
-- `X-Payment-Router-Gateway` - the adapter that handled the callback
-- `X-Forwarded-Host` - the host the gateway called this worker on
-- `X-Payment-Router-External-Id` - the caller's own id, if one was set when creating the route
-
-The values above are for convenience only - authenticity comes from the signed JWT below, whose
-claims carry the same facts. A receiver that verifies should trust the token, not these headers.
-
-### Verifying a callback (signed JWT)
-
-When `WEBHOOK_SIGNING_PRIVATE_KEY` is set, every forwarded callback carries a standard **EdDSA
-(Ed25519) JWT** in the `X-Payment-Router-Signature` header. The signing is asymmetric: the worker
-holds the private key, receivers only ever get the public key (as a JWKS), so anyone can verify a
-callback came from here but nobody can forge one. Because it is a plain JWT, you verify it with any
-off-the-shelf library - no custom crypto to implement.
-
-The JWT claims are:
-
-- `iss` - this worker's public origin (`PUBLIC_BASE_URL`)
-- `iat` / `exp` - issued-at and expiry (5 min TTL); reject expired tokens to stop replays
-- `route_id` - the route id that matched
-- `gateway` - the adapter that handled the callback
-- `external_id` - the caller's own id, if one was set when creating the route
-- `body_sha256` - hex SHA-256 of the forwarded request body, so the signature also covers the payload
-
-The public keys are served as a JWKS at `GET /.well-known/jwks.json`. Each key has a `kid`, and the
-JWT names the `kid` it was signed with, so keys can be rotated without breaking receivers. Verifying
-in Node with [`jose`](https://github.com/panva/jose):
+Every forwarded callback carries a signed EdDSA JWT in `X-Payment-Router-Signature`, verifiable
+against the JWKS at `GET /.well-known/jwks.json`:
 
 ```js
 import { jwtVerify, createRemoteJWKSet } from "jose";
@@ -104,38 +57,39 @@ const JWKS = createRemoteJWKSet(new URL("https://router.example.com/.well-known/
 const token = req.headers["x-payment-router-signature"];
 const { payload } = await jwtVerify(token, JWKS, { issuer: "https://router.example.com" });
 
-const bodyOk = payload.body_sha256 === createHash("sha256").update(rawBody).digest("hex");
-if (!bodyOk) throw new Error("body does not match signature");
+if (payload.body_sha256 !== createHash("sha256").update(rawBody).digest("hex")) {
+    throw new Error("body does not match signature");
+}
 // payload.route_id / payload.external_id tell you which of your payments this is
 ```
 
-`createRemoteJWKSet` fetches, caches, and picks the right key by `kid` for you, so rotation is
-transparent. When `WEBHOOK_SIGNING_PRIVATE_KEY` is unset the callback is forwarded unsigned and the
-JWKS endpoint returns 404.
+Claims: `route_id`, `gateway`, `external_id`, `body_sha256` (hex SHA-256 of the forwarded body),
+`exp` (5 min TTL). If the router isn't configured to sign, this header is simply absent.
 
-Generate a keypair with `node scripts/generate-signing-key.mjs`, then set the private key with
-`wrangler secret put WEBHOOK_SIGNING_PRIVATE_KEY` (or in `.dev.vars` locally).
-
-**Rotating keys:** generate a new keypair, move the current *public* JWK into the
-`WEBHOOK_SIGNING_PUBLIC_KEYS` secret (a JSON array - it keeps being published in the JWKS), then set
-the new private key as `WEBHOOK_SIGNING_PRIVATE_KEY`. Once every callback signed by the old key has
-expired (5 min), drop it from `WEBHOOK_SIGNING_PUBLIC_KEYS`.
-
-Responses back to the gateway:
-
-- **2xx** - the real webhook's own status and body are passed through verbatim (some gateways insist
-  on an exact response body).
-- **502** - the real webhook was unreachable or answered with an error, so the gateway retries.
-- **404** - unknown gateway, or no unexpired route for the id in the callback. Also a retry signal:
-  the route may simply not have been created yet.
-- **400** - the callback carried no external payment id at all, so it cannot be routed.
+The forwarded request also carries plain headers with the same facts (`X-Payment-Router-Id`,
+`X-Payment-Router-Gateway`, `X-Payment-Router-External-Id`) - convenience only, trust the JWT above
+for anything that matters.
 
 ## Notes
 
-- The create endpoint is open, so two things keep this worker from being an open relay: the target
-  check (registered URLs must be `https` and must not point at a private or loopback host;
-  `ALLOW_PRIVATE_WEBHOOK_TARGETS=true` lifts that, for local testing only), and a per-client-IP rate
-  limit on `POST /v1/routes` (Cloudflare's native rate limiter, configured under `unsafe.bindings` in
-  `wrangler.jsonc` - 60 creations per IP per minute by default; tune `limit`/`period` there).
-- Gateway signatures (PayU's `OpenPayU-Signature`) are not verified here - the header is forwarded
-  untouched, so verify it in the receiving webhook as you would without this worker.
+- Your webhook endpoint's response is passed straight back to the gateway. Return 2xx or the gateway
+  will treat the callback as failed and retry.
+- Gateway signatures (e.g. PayU's `OpenPayU-Signature`) pass through untouched - verify them as you
+  normally would, independent of the router's own JWT.
+- Route creation is rate-limited per IP (60/min by default).
+
+## Self-hosting
+
+This is built for Cloudflare Workers (D1, `wrangler`) - to run 24/7 you need to deploy it there
+with `pnpm deploy`, not just run it locally.
+
+```bash
+npx wrangler d1 create payment-router   # paste the printed id into wrangler.jsonc
+pnpm db:generate                        # regenerate SQL after schema changes
+pnpm db:migrate:local                   # apply migrations to the local D1
+pnpm db:migrate                         # apply migrations to the remote D1
+pnpm dev                                # local dev only - stops when your machine does
+pnpm deploy                             # ship it to Cloudflare Workers
+```
+
+Set `PUBLIC_BASE_URL` in `wrangler.jsonc` to the worker's public origin.
