@@ -21,13 +21,7 @@ webhooksApi.all("/:gateway", async (c) => {
     }
 
     const request = c.req.raw;
-    const rawBody = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
-
-    const routeId = adapter.extractRouteId({
-        url: new URL(request.url),
-        rawBody,
-        contentType: request.headers.get("content-type"),
-    });
+    const routeId = await adapter.extractRouteId(request.clone());
     if (!routeId) {
         return c.json({ error: "no_route_id_in_callback" }, 400);
     }
@@ -37,6 +31,8 @@ webhooksApi.all("/:gateway", async (c) => {
         // 404 keeps the gateway retrying: a route that has not been created yet may still show up.
         return c.json({ error: "no_matching_route", routeId }, 404);
     }
+
+    const rawBody = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
 
     const config = readConfig(c.env);
     const result = await forwardWebhook({

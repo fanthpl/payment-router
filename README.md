@@ -9,17 +9,33 @@ gateway's webhook URL at `https://<worker>/webhooks/<gateway>`. When the callbac
 replayed at your real webhook URL - body byte for byte, original headers intact, so the gateway's own
 signature verification still works.
 
-A hosted instance is live at `https://payment-r.fanth.pl` - no setup needed, just start calling it.
+A hosted instance is live at https://payment-r.fanth.pl - no setup needed, just start calling it.
 
-## 1. Register your webhook
+## Supported gateways
 
-No auth on this endpoint.
+| Gateway                                 | Callback endpoint                               | External ID field                                                                                   |
+| --------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [PayU](https://poland.payu.com/)        | `https://router.example.com/webhooks/payu`      | [`extOrderId`](https://developers.payu.com/europe/pl/api/#tag/Order/operation/create-an-order)      |
+| [Paymentic](https://www.paymentic.com/) | `https://router.example.com/webhooks/paymentic` | [`externalReferenceId`](https://docs.paymentic.com/api/v1.2/payment-api/create-payment-transaction) |
+| [PayNow](https://www.paynow.pl/)        | `https://router.example.com/webhooks/paynow`    | [`externalId`](https://docs.paynow.pl/pl/docs/reference/v3/send-payment-request)                    |
+| [Cashbill](https://www.cashbill.pl/)    | `https://router.example.com/webhooks/cashbill`  | [`additionalData`](https://api.cashbill.pl/api/payment-gateway/creating-new-transaction)            |
+
+Each gateway's adapter lives in `src/gateways/`. Adding a new one is a single file, see that
+directory for the pattern.
+
+## 1. Set notification url in your payment gateway dashboard
+
+Set it according to this table:
+
+Replace `router.example.com` with your own instance's public origin. The path is fixed per gateway.
+
+## 2. Register your webhook on payment initalization
 
 ```bash
 curl -X POST https://router.example.com/v1/routes \
   -H "Content-Type: application/json" \
   -d '{
-        "webhookUrl": "https://shop.example.com/webhooks/payu",
+        "webhookUrl": "https://shop.example.com/webhooks/paymentic",
         "expiresAt": "2026-07-12T10:00:00Z"
       }'
 ```
@@ -27,22 +43,20 @@ curl -X POST https://router.example.com/v1/routes \
 ```json
 {
     "id": "3f6a1c0e-9a6b-4a5f-8d21-7c1b0f2e9d44",
-    "webhookUrl": "https://shop.example.com/webhooks/payu",
+    "webhookUrl": "https://shop.example.com/webhooks/paymentic",
     "expiresAt": "2026-07-12T10:00:00.000Z",
     "createdAt": "2026-07-11T12:00:00.000Z",
-    "callbackUrls": { "payu": "https://router.example.com/webhooks/payu" }
+    "callbackUrls": { "paymentic": "https://router.example.com/webhooks/paymentic" }
 }
 ```
 
-`webhookUrl` must be `https` and a public host. `expiresAt` is optional, defaults to 12h out;
-callbacks arriving after it are rejected. `id` is what you send the gateway as its external payment
-id (for PayU: `extOrderId` on the order).
+`expiresAt` is optional, defaults to 12h out.
 
-## 2. Point the gateway at it
+## 3. Create transaction in your payment gateway
 
-Set the gateway's webhook URL to the matching entry in `callbackUrls` from the response above.
+Create a transaction according to the gateway's API, using the `id` from the previous step as the external payment id. You can look up the correct field in the [table above](#supported-gateways).
 
-## 3. Verify the callback (recommended)
+## 4. Verify the callback (recommended)
 
 Every forwarded callback carries a signed EdDSA JWT in `X-Payment-Router-Signature`, verifiable
 against the JWKS at `GET /.well-known/jwks.json`:

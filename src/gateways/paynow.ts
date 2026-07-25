@@ -12,15 +12,15 @@ type PayNowNotification = {
 export const paynow: GatewayAdapter = {
     name: "paynow",
 
-    extractRouteId({ rawBody }) {
-        let payload: PayNowNotification;
+    async extractRouteId(request) {
+        let parsed: unknown;
         try {
-            const parsed: unknown = JSON.parse(rawBody);
-            if (parsed === null || typeof parsed !== "object") return null;
-            payload = parsed as PayNowNotification;
+            parsed = await request.json();
         } catch {
             return null;
         }
+        if (parsed === null || typeof parsed !== "object") return null;
+        const payload = parsed as PayNowNotification;
 
         return typeof payload.externalId === "string" && payload.externalId.length > 0 ? payload.externalId : null;
     },

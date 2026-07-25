@@ -14,15 +14,15 @@ type PayuNotification = {
 export const payu: GatewayAdapter = {
     name: "payu",
 
-    extractRouteId({ rawBody }) {
-        let payload: PayuNotification;
+    async extractRouteId(request) {
+        let parsed: unknown;
         try {
-            const parsed: unknown = JSON.parse(rawBody);
-            if (parsed === null || typeof parsed !== "object") return null;
-            payload = parsed as PayuNotification;
+            parsed = await request.json();
         } catch {
             return null;
         }
+        if (parsed === null || typeof parsed !== "object") return null;
+        const payload = parsed as PayuNotification;
 
         const extOrderId = payload.order?.extOrderId ?? payload.extOrderId;
         return typeof extOrderId === "string" && extOrderId.length > 0 ? extOrderId : null;
