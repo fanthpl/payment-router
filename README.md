@@ -27,14 +27,13 @@ curl -X POST https://router.example.com/v1/routes \
   -H "Content-Type: application/json" \
   -d '{
         "webhookUrl": "https://shop.example.com/webhooks/paymentic",
-        "externalId": "order-1234",
         "expiresAt": "2026-07-12T10:00:00Z"
       }'
 ```
 
 ```json
 {
-    "externalId": "order-1234",
+    "externalId": "3f6a1c0e-9a6b-4a5f-8d21-7c1b0f2e9d44",
     "webhookUrl": "https://shop.example.com/webhooks/paymentic",
     "expiresAt": "2026-07-12T10:00:00.000Z",
     "createdAt": "2026-07-11T12:00:00.000Z",
@@ -42,10 +41,8 @@ curl -X POST https://router.example.com/v1/routes \
 }
 ```
 
-`externalId` is the value you send to the gateway and that callbacks are matched on. It is optional
-and defaults to a random UUID. External ids are global, so a value still in use gets a `409` - prefix
-yours with something of your own if a plain order number could clash. Once a route expires its id is
-free again, and the next request claiming it simply replaces the dead one.
+`externalId` is a UUID generated for you - it is the value you send to the gateway and that callbacks
+are matched on. Keep it alongside your own order id so you can correlate the callback when it lands.
 
 `expiresAt` is optional, defaults to 12h out.
 
