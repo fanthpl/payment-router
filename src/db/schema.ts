@@ -7,10 +7,9 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 export const paymentRoutes = sqliteTable(
     "payment_routes",
     {
-        id: text("id").primaryKey(),
+        /** Caller-supplied, sent to the gateway as its external payment id, matched back on callback. */
+        externalId: text("external_id").primaryKey(),
         webhookUrl: text("webhook_url").notNull(),
-        /** Caller-supplied id, echoed back on the forwarded callback so they can correlate it. */
-        externalId: text("external_id"),
         expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
         createdAt: integer("created_at", { mode: "timestamp_ms" })
             .notNull()

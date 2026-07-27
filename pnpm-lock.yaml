@@ -20,9 +20,6 @@ importers:
       ipaddr.js:
         specifier: ^2.4.0
         version: 2.4.0
-      jose:
-        specifier: ^6.2.4
-        version: 6.2.4
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1487,9 +1484,6 @@ packages:
     resolution: {integrity: sha512-9VGk3HGanVE6JoZXHiCpnGy5X0jYDnN4EA4lntFPj+1vIWlFhIylq2CrrCOJH9EAhc5CYhq18F2Av2tgoAPsYQ==}
     engines: {node: '>= 10'}
 
-  jose@6.2.4:
-    resolution: {integrity: sha512-N8acGzVsQy6M/fjFcxtysNc4Q379TcM5dM/qKkNtsHFji88yANnXTr7BLeP75iPnFwBfQzM/jg2BZ9+HZrHCZA==}
-
   js-tokens@9.0.1:
     resolution: {integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==}
 
@@ -2702,8 +2696,6 @@ snapshots:
   hono@4.12.29: {}
 
   ipaddr.js@2.4.0: {}
-
-  jose@6.2.4: {}
 
   js-tokens@9.0.1: {}
 

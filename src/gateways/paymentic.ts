@@ -12,7 +12,7 @@ type PaymenticNotification = {
 export const paymentic: GatewayAdapter = {
     name: "paymentic",
 
-    async extractRouteId(request) {
+    async extractExternalId(request) {
         let parsed: unknown;
         try {
             parsed = await request.json();

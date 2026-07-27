@@ -27,13 +27,14 @@ curl -X POST https://router.example.com/v1/routes \
   -H "Content-Type: application/json" \
   -d '{
         "webhookUrl": "https://shop.example.com/webhooks/paymentic",
+        "externalId": "order-1234",
         "expiresAt": "2026-07-12T10:00:00Z"
       }'
 ```
 
 ```json
 {
-    "id": "3f6a1c0e-9a6b-4a5f-8d21-7c1b0f2e9d44",
+    "externalId": "order-1234",
     "webhookUrl": "https://shop.example.com/webhooks/paymentic",
     "expiresAt": "2026-07-12T10:00:00.000Z",
     "createdAt": "2026-07-11T12:00:00.000Z",
@@ -41,46 +42,28 @@ curl -X POST https://router.example.com/v1/routes \
 }
 ```
 
+`externalId` is the value you send to the gateway and that callbacks are matched on. It is optional
+and defaults to a random UUID. External ids are global, so a value still in use gets a `409` - prefix
+yours with something of your own if a plain order number could clash. Once a route expires its id is
+free again, and the next request claiming it simply replaces the dead one.
+
 `expiresAt` is optional, defaults to 12h out.
 
 ## 3. Create transaction in your payment gateway
 
-Create a transaction according to the gateway's API, using the `id` from the previous step as the external payment id. You can look up the correct field in the [table above](#supported-gateways).
+Create a transaction according to the gateway's API, using the `externalId` from the previous step as the external payment id. You can look up the correct field in the [table above](#supported-gateways).
 
-## 4. Verify the callback (recommended)
+## 4. Verify the callback
 
-Every forwarded callback carries a signed EdDSA JWT in `X-Payment-Router-Signature`, verifiable
-against the JWKS at `GET /.well-known/jwks.json`:
-
-```js
-import { jwtVerify, createRemoteJWKSet } from "jose";
-import { createHash } from "node:crypto";
-
-const JWKS = createRemoteJWKSet(new URL("https://router.example.com/.well-known/jwks.json"));
-
-// rawBody is the exact bytes you received on your webhook
-const token = req.headers["x-payment-router-signature"];
-const { payload } = await jwtVerify(token, JWKS, { issuer: "https://router.example.com" });
-
-if (payload.body_sha256 !== createHash("sha256").update(rawBody).digest("hex")) {
-    throw new Error("body does not match signature");
-}
-// payload.route_id / payload.external_id tell you which of your payments this is
-```
-
-Claims: `route_id`, `gateway`, `external_id`, `body_sha256` (hex SHA-256 of the forwarded body),
-`exp` (5 min TTL). If the router isn't configured to sign, this header is simply absent.
-
-The forwarded request also carries plain headers with the same facts (`X-Payment-Router-Id`,
-`X-Payment-Router-Gateway`, `X-Payment-Router-External-Id`) - convenience only, trust the JWT above
-for anything that matters.
+The router forwards the gateway's request verbatim - same method, same body byte for byte, same
+headers - and adds nothing of its own. So verify it exactly as you would if the gateway called you
+directly: check the gateway's own signature (PayU's `OpenPayU-Signature`, PayNow's `Signature`, ...)
+against the raw body you received. Your `externalId` is inside that payload, where the gateway put it.
 
 ## Notes
 
 - Your webhook endpoint's response is passed straight back to the gateway. Return 2xx or the gateway
   will treat the callback as failed and retry.
-- Gateway signatures (e.g. PayU's `OpenPayU-Signature`) pass through untouched - verify them as you
-  normally would, independent of the router's own JWT.
 - Route creation is rate-limited per IP (60/min by default).
 
 ## Self-hosting

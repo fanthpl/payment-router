@@ -12,7 +12,7 @@ type PayNowNotification = {
 export const paynow: GatewayAdapter = {
     name: "paynow",
 
-    async extractRouteId(request) {
+    async extractExternalId(request) {
         let parsed: unknown;
         try {
             parsed = await request.json();

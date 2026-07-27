@@ -1,4 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
+import { lt } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -13,7 +14,7 @@ const DEFAULT_ROUTE_TTL_MS = 12 * 60 * 60 * 1000;
 
 const createRouteSchema = z.object({
     webhookUrl: z.string().min(1),
-    /** Caller's own id for this payment, echoed back as a header on the forwarded callback. */
+    /** Caller's own id for this payment, sent on to the gateway. Defaults to a random UUID. */
     externalId: z.string().min(1).max(256).optional(),
     /** ISO 8601 timestamp after which callbacks carrying this id are rejected. Defaults to 12h out. */
     expiresAt: z.iso.datetime({ offset: true }).optional(),
@@ -21,7 +22,7 @@ const createRouteSchema = z.object({
 
 export const routesApi = new Hono<AppEnv>();
 
-/** Create the "short link": a UUID to hand the gateway, paired with the real webhook URL. */
+/** Create the "short link": the external id you hand the gateway, paired with the real webhook URL. */
 routesApi.post("/", zValidator("json", createRouteSchema), async (c) => {
     // Public endpoint, so throttle per client IP to keep it from being used as an open relay.
     const limiter = c.env.ROUTES_RATE_LIMITER;
@@ -40,23 +41,34 @@ routesApi.post("/", zValidator("json", createRouteSchema), async (c) => {
         throw new HTTPException(422, { message: validation.reason });
     }
 
+    const now = new Date();
+    const values = {
+        externalId: input.externalId ?? crypto.randomUUID(),
+        webhookUrl: validation.url.toString(),
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : new Date(now.getTime() + DEFAULT_ROUTE_TTL_MS),
+        createdAt: now,
+    };
+
     const [route] = await c
         .get("db")
         .insert(paymentRoutes)
-        .values({
-            id: crypto.randomUUID(),
-            webhookUrl: validation.url.toString(),
-            externalId: input.externalId ?? null,
-            expiresAt: input.expiresAt ? new Date(input.expiresAt) : new Date(Date.now() + DEFAULT_ROUTE_TTL_MS),
-        })
+        .values(values)
+        // Caller-chosen ids share one namespace, so an id still in use must not be silently rebound.
+        // An expired one is dead weight though, so let it be claimed again - as one statement, so two
+        // concurrent claims cannot both win. A route with no expiry is never reclaimed.
+        .onConflictDoUpdate({ target: paymentRoutes.externalId, set: values, setWhere: lt(paymentRoutes.expiresAt, now) })
         .returning();
+
+    if (!route) {
+        throw new HTTPException(409, { message: "external_id_already_used" });
+    }
 
     return c.json(serializeRoute(route, c.env), 201);
 });
 
 /**
- * `id` is what you send to the gateway as its external payment id; `callbackUrls` are the fixed URLs
- * you paste into each gateway's dashboard - the same for every route, by design.
+ * `externalId` is what you send to the gateway as its external payment id; `callbackUrls` are the
+ * fixed URLs you paste into each gateway's dashboard - the same for every route, by design.
  */
 function serializeRoute(route: PaymentRoute, env: Env) {
     const { publicBaseUrl } = readConfig(env);

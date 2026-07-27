@@ -1,5 +1,4 @@
 import type { PaymentRoute } from "../db/schema";
-import { sha256Hex, signCallback } from "./signature";
 
 /** Headers that describe the hop to us, not the payload - they must not be replayed upstream. */
 const STRIPPED_HEADERS = new Set([
@@ -24,44 +23,23 @@ export type ForwardResult = {
 
 export type ForwardInput = {
     route: PaymentRoute;
-    gateway: string;
     request: Request;
     rawBody: string;
     timeoutMs: number;
-    /** Ed25519 private key (JWK JSON); when set, the callback is signed as a JWT. */
-    signingPrivateKey: string | null;
-    /** JWT `iss` claim - the public origin of this worker; used only when signing. */
-    issuer: string;
 };
 
 /**
- * Replay the gateway callback at the route's real webhook URL. The body is passed through byte for
- * byte and the original headers are kept so the receiver can still verify the gateway's signature.
+ * Replay the gateway callback at the route's real webhook URL, verbatim: same method, same body byte
+ * for byte, same headers, so the receiver can still verify the gateway's own signature. We add
+ * nothing of our own - the route id is already inside the payload, where the gateway put it.
  */
-export async function forwardWebhook({ route, gateway, request, rawBody, timeoutMs, signingPrivateKey, issuer }: ForwardInput): Promise<ForwardResult> {
+export async function forwardWebhook({ route, request, rawBody, timeoutMs }: ForwardInput): Promise<ForwardResult> {
     const target = buildTargetUrl(route.webhookUrl, new URL(request.url));
     const headers = new Headers();
 
     for (const [name, value] of request.headers) {
         if (STRIPPED_HEADERS.has(name.toLowerCase()) || name.toLowerCase().startsWith("cf-")) continue;
         headers.set(name, value);
-    }
-
-    // Convenience headers for the receiver. Authenticity comes from the signed JWT below, not these -
-    // the same facts live in its claims, so a receiver that verifies should trust the token, not here.
-    headers.set("X-Payment-Router-Id", route.id);
-    headers.set("X-Payment-Router-Gateway", gateway);
-    headers.set("X-Forwarded-Host", new URL(request.url).host);
-    if (route.externalId) headers.set("X-Payment-Router-External-Id", route.externalId);
-
-    if (signingPrivateKey) {
-        const jwt = await signCallback(signingPrivateKey, issuer, {
-            routeId: route.id,
-            gateway,
-            externalId: route.externalId,
-            bodySha256: await sha256Hex(rawBody),
-        });
-        headers.set("X-Payment-Router-Signature", jwt);
     }
 
     const hasBody = request.method !== "GET" && request.method !== "HEAD";

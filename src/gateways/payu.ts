@@ -14,7 +14,7 @@ type PayuNotification = {
 export const payu: GatewayAdapter = {
     name: "payu",
 
-    async extractRouteId(request) {
+    async extractExternalId(request) {
         let parsed: unknown;
         try {
             parsed = await request.json();

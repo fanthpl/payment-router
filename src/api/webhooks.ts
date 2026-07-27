@@ -9,9 +9,9 @@ import type { AppEnv } from "../types";
 export const webhooksApi = new Hono<AppEnv>();
 
 /**
- * The single URL a gateway points at. The route id travels inside the callback itself (as the
- * external payment id we set when creating the payment), so the gateway's adapter digs it out and
- * we replay the request at that route's real webhook URL.
+ * The single URL a gateway points at. The external id travels inside the callback itself (it is the
+ * external payment id set when creating the payment), so the gateway's adapter digs it out and we
+ * replay the request at that route's real webhook URL.
  */
 webhooksApi.all("/:gateway", async (c) => {
     const gatewayName = c.req.param("gateway");
@@ -21,28 +21,24 @@ webhooksApi.all("/:gateway", async (c) => {
     }
 
     const request = c.req.raw;
-    const routeId = await adapter.extractRouteId(request.clone());
-    if (!routeId) {
-        return c.json({ error: "no_route_id_in_callback" }, 400);
+    const externalId = await adapter.extractExternalId(request.clone());
+    if (!externalId) {
+        return c.json({ error: "no_external_id_in_callback" }, 400);
     }
 
-    const route = await c.get("db").query.paymentRoutes.findFirst({ where: eq(paymentRoutes.id, routeId) });
+    const route = await c.get("db").query.paymentRoutes.findFirst({ where: eq(paymentRoutes.externalId, externalId) });
     if (!route || (route.expiresAt && route.expiresAt.getTime() < Date.now())) {
         // 404 keeps the gateway retrying: a route that has not been created yet may still show up.
-        return c.json({ error: "no_matching_route", routeId }, 404);
+        return c.json({ error: "no_matching_route", externalId }, 404);
     }
 
     const rawBody = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
 
-    const config = readConfig(c.env);
     const result = await forwardWebhook({
         route,
-        gateway: adapter.name,
         request,
         rawBody,
-        timeoutMs: config.forwardTimeoutMs,
-        signingPrivateKey: config.signingPrivateKey,
-        issuer: config.publicBaseUrl ?? new URL(request.url).origin,
+        timeoutMs: readConfig(c.env).forwardTimeoutMs,
     });
 
     if (!result.delivered) {

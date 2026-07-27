@@ -8,7 +8,7 @@ import type { GatewayAdapter } from "./types";
 export const cashbill: GatewayAdapter = {
     name: "cashbill",
 
-    async extractRouteId(request) {
+    async extractExternalId(request) {
         const searchParams = new URL(request.url).searchParams;
         const additionalData = searchParams.get("args");
         return additionalData && additionalData.length > 0 ? additionalData : null;

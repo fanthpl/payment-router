@@ -15,6 +15,13 @@
       "when": 1784841067989,
       "tag": "0001_nasty_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785184095209,
+      "tag": "0002_cooing_inertia",
+      "breakpoints": true
     }
   ]
 }
